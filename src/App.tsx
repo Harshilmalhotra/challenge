@@ -6,8 +6,10 @@ import Achievements from './pages/Achievements';
 import Learning from './pages/Learning';
 import Profile from './pages/Profile';
 import Gamify from './pages/Gamify';
+import Pose from './pages/Pose';
 import AuthModal from './components/auth/AuthModal';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import Rp from './pages/Rp';
 import { useAuth } from './hooks/useAuth';
 import { UserProvider } from './context/UserContext';
 import { ProgressProvider } from './context/ProgressContext';
@@ -107,6 +109,17 @@ function AppContent() {
                   <Profile />
                 </ProtectedRoute>
               } />
+              <Route path="pose" element={
+               
+                  <Pose />
+                
+              } />
+
+              <Route path="rp" element={
+                
+                <Rp />
+              } />
+              <Route path="*" element={<div className="p-8">Page Not Found</div>} />
             </Route>
           </Routes>
         </Router>
