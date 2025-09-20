@@ -34,9 +34,34 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       const now = Date.now();
       if (now - lastToggleRef.current < 1500) return; // debounce 1.5s
       lastToggleRef.current = now;
-      setPlaying((prev) => !prev);
+      setPlaying((prev) => {
+        const next = !prev;
+        if (next) {
+          handlePlay();
+        } else {
+          handlePause();
+        }
+        return next;
+      });
     }
   }, [zone]);
+
+
+   const videoRef = useRef<HTMLVideoElement>(null);
+  
+    const handlePlay = () => {
+      videoRef.current?.play();
+    };
+  
+    const handlePause = () => {
+      videoRef.current?.pause();
+    };
+  
+    const handleSkip = (seconds: number) => {
+      if (videoRef.current) {
+        videoRef.current.currentTime += seconds;
+      }
+    };
 
   // ⏱️ Watch time tracking
   useEffect(() => {
@@ -75,14 +100,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         } shadow-sm flex-1`}
       >
         <div className="relative aspect-video bg-black">
-          <ReactPlayer
-            ref={playerRef}
-            url="/videos/videoplayback.mp4" // Use the correct relative path
-            playing={playing}
-            controls={false}
+          <video
+            ref={videoRef}
+            src="/videos/videoplayback.mp4"
+            controls
             width="100%"
             height="100%"
-            onEnded={handleEnded}
+            style={{ objectFit: "cover" }}
           />
         </div>
 

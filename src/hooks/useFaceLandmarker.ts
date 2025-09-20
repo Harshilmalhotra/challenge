@@ -55,89 +55,86 @@ export function useFacePose() {
         audio: false,
       });
       videoRef.current.srcObject = stream;
-      videoRef.current.onloadeddata = () => {
-        setReady(true);
-        loop();
+
+      // ✅ Use onloadedmetadata (dimensions guaranteed)
+      videoRef.current.onloadedmetadata = () => {
+        if (
+          videoRef.current?.videoWidth &&
+          videoRef.current?.videoHeight
+        ) {
+          setReady(true);
+          loop();
+        }
       };
     };
 
     const loop = () => {
-
-      if (!running || !videoRef.current || !landmarker) return;
-      // Prevent MediaPipe ROI error: only process if video has non-zero dimensions
-      if (
-        videoRef.current.videoWidth === 0 ||
-        videoRef.current.videoHeight === 0
-      ) {
+      if (!running || !videoRef.current || !landmarker) {
         raf = requestAnimationFrame(loop);
         return;
       }
 
-      const now = performance.now();
-      const res = landmarker.detectForVideo(videoRef.current, now);
+      const video = videoRef.current;
 
-      if (res?.facialTransformationMatrixes?.length) {
-        const m = res.facialTransformationMatrixes[0].data as Float32Array;
-        const r00 = m[0], r01 = m[4], r02 = m[8];
-        const r10 = m[1], r11 = m[5], r12 = m[9];
-        const r20 = m[2], r21 = m[6], r22 = m[10];
+      // 🚨 Hard guard: skip until valid frame dimensions exist
+      if (!video.videoWidth || !video.videoHeight) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
 
-        // forward vector
-        const fx = r02, fy = r12, fz = r22;
+      try {
+        const now = performance.now();
+        const res = landmarker.detectForVideo(video, now);
 
-        // yaw: left-right, pitch: up-down
-        let yaw = Math.atan2(fx, fz);
-        yaw = -yaw; // mirror correction
-        let pitch = Math.atan2(-fy, Math.hypot(fx, fz));
+        if (res?.facialTransformationMatrixes?.length) {
+          const m = res.facialTransformationMatrixes[0].data as Float32Array;
 
-        const yawDegInstant = (yaw * 180) / Math.PI;
-        const pitchDegInstant = (pitch * 180) / Math.PI;
+          // Extract rotation matrix
+          const fx = m[8], fy = m[9], fz = m[10];
 
-        // smoothing
-        emaYaw.current = alpha * yawDegInstant + (1 - alpha) * emaYaw.current;
-        emaPitch.current = alpha * pitchDegInstant + (1 - alpha) * emaPitch.current;
+          let yaw = -Math.atan2(fx, fz); // mirror correction
+          let pitch = Math.atan2(-fy, Math.hypot(fx, fz));
 
-        const yawClamped = Math.max(-45, Math.min(45, emaYaw.current));
-        const pitchClamped = Math.max(-45, Math.min(45, emaPitch.current));
+          const yawDegInstant = (yaw * 180) / Math.PI;
+          const pitchDegInstant = (pitch * 180) / Math.PI;
 
-        setYawDeg(yawClamped);
-        setPitchDeg(pitchClamped);
+          // EMA smoothing
+          emaYaw.current = alpha * yawDegInstant + (1 - alpha) * emaYaw.current;
+          emaPitch.current = alpha * pitchDegInstant + (1 - alpha) * emaPitch.current;
 
-        // zone classification
-        const dead = 8; // degrees threshold for diagonals/sides
-        const centerYaw = 5;   // yaw within -5 to +5
-        const centerPitch = 14; // pitch within -14 to +14
+          const yawClamped = Math.max(-45, Math.min(45, emaYaw.current));
+          const pitchClamped = Math.max(-45, Math.min(45, emaPitch.current));
 
-        let z: PoseZone = "CENTER";
-        // Center zone first
-        if (
-          Math.abs(yawClamped) <= centerYaw &&
-          Math.abs(pitchClamped) <= centerPitch
-        ) {
-          z = "CENTER";
-        } else if (yawClamped <= -dead && pitchClamped >= dead) {
-          z = "BOTTOM_LEFT";
-        } else if (yawClamped >= dead && pitchClamped >= dead) {
-          z = "BOTTOM_RIGHT";
-        } else if (yawClamped <= -dead && pitchClamped <= -dead) {
-          z = "TOP_LEFT";
-        } else if (yawClamped >= dead && pitchClamped <= -dead) {
-          z = "TOP_RIGHT";
-        } else if (yawClamped > dead) {
-          z = "RIGHT";
-        } else if (yawClamped < -dead) {
-          z = "LEFT";
-        } else if (pitchClamped > dead) {
-          z = "DOWN";
-        } else if (pitchClamped < -dead) {
-          z = "UP";
+          setYawDeg(yawClamped);
+          setPitchDeg(pitchClamped);
+
+          // Zone classification
+          const dead = 8;
+          const centerYaw = 5;
+          const centerPitch = 14;
+
+          let z: PoseZone = "CENTER";
+          if (Math.abs(yawClamped) <= centerYaw && Math.abs(pitchClamped) <= centerPitch) {
+            z = "CENTER";
+          } else if (yawClamped <= -dead && pitchClamped >= dead) z = "BOTTOM_LEFT";
+          else if (yawClamped >= dead && pitchClamped >= dead) z = "BOTTOM_RIGHT";
+          else if (yawClamped <= -dead && pitchClamped <= -dead) z = "TOP_LEFT";
+          else if (yawClamped >= dead && pitchClamped <= -dead) z = "TOP_RIGHT";
+          else if (yawClamped > dead) z = "RIGHT";
+          else if (yawClamped < -dead) z = "LEFT";
+          else if (pitchClamped > dead) z = "DOWN";
+          else if (pitchClamped < -dead) z = "UP";
+
+          setZone(z);
+
+          console.log(
+            `[FacePose] Yaw: ${yawClamped.toFixed(2)}°, Pitch: ${pitchClamped.toFixed(
+              2
+            )}°, Zone: ${z}`
+          );
         }
-        setZone(z);
-
-        // Add console logs for debugging
-        console.log(
-          `[FacePose] Yaw: ${yawClamped.toFixed(2)}°, Pitch: ${pitchClamped.toFixed(2)}°, Zone: ${z}`
-        );
+      } catch (err) {
+        console.warn("[FacePose] detectForVideo failed, skipping frame", err);
       }
 
       raf = requestAnimationFrame(loop);
@@ -148,6 +145,7 @@ export function useFacePose() {
     return () => {
       running = false;
       cancelAnimationFrame(raf);
+      landmarker?.close?.();
     };
   }, []);
 
